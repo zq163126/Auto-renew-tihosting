@@ -26,7 +26,7 @@ jobs:
           PROXY_NODE: ${{ secrets.PROXY_NODE }}
         run: |
           if [ -z "$PROXY_NODE" ]; then
-            echo "No proxy, skip."
+            echo "No proxy configured, skipping..."
           else
             # 1. 下载 Sing-box
             TAG=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
@@ -35,47 +35,8 @@ jobs:
             tar -xzf "sing-box-${VERSION}-linux-amd64.tar.gz"
             mv "sing-box-${VERSION}-linux-amd64/sing-box" . && chmod +x sing-box
             
-            # 2. 生成配置 (注意下面的每一行前面都有空格对齐)
-            cat << 'EOF' > gen_config.py
-            import os, json, base64
-            from urllib.parse import urlparse, parse_qs, unquote
-            def get_conf():
-                url = os.environ.get("PROXY_NODE", "").strip()
-                p = urlparse(url)
-                scheme = p.scheme.lower()
-                params = {k: v[0] for k, v in parse_qs(p.query).items()}
-                c = {"log": {"level": "info"}, "inbounds": [{"type": "socks", "tag": "socks-in", "listen": "127.0.0.1", "listen_port": 10808}], "outbounds": []}
-                auth = unquote(p.netloc.split('@')[0] if '@' in p.netloc else "")
-                host, port = p.hostname, int(p.port or 443)
-                sni = params.get("sni", host)
-                out = {"tag": "proxy", "server": host, "server_port": port}
-                if scheme == "vless":
-                    out.update({"type": "vless", "uuid": auth or p.username, "packet_encoding": "xudp", "tls": {"enabled": True, "server_name": sni, "insecure": True}})
-                    if params.get("type") == "ws":
-                        out["transport"] = {"type": "ws", "path": unquote(params.get("path", "/")), "headers": {"Host": sni}}
-                    if params.get("security") == "reality":
-                        out["tls"]["reality"] = {"enabled": True, "public_key": params.get("pbk", ""), "short_id": params.get("sid", "")}
-                elif scheme == "tuic":
-                    u, pwd = auth.split(':', 1) if ':' in auth else (auth, "")
-                    out.update({"type": "tuic", "uuid": u, "password": pwd, "congestion_control": params.get("congestion_control", "cubic"), "tls": {"enabled": True, "server_name": sni, "alpn": ["h3"], "insecure": True}})
-                elif scheme in ["hysteria2", "hy2"]:
-                    out.update({"type": "hysteria2", "password": auth, "tls": {"enabled": True, "server_name": sni, "insecure": True}})
-                elif scheme == "vmess":
-                    try:
-                        raw = url[8:].split("#")[0]
-                        v = json.loads(base64.b64decode(raw + "="*(4-len(raw)%4)).decode())
-                        out.update({"type": "vmess", "server": v['add'], "server_port": int(v['port']), "uuid": v['id'], "security": "auto"})
-                        if v.get('tls') == "tls": out["tls"] = {"enabled": True, "server_name": v.get('sni', v['add']), "insecure": True}
-                    except: pass
-                c["outbounds"].append(out)
-                c["outbounds"].append({"type": "direct", "tag": "direct"})
-                return c
-            with open("config.json", "w") as f:
-                json.dump(get_conf(), f, indent=2)
-            EOF
-            
-            # 为了处理上面的对齐空格，我们需要用 sed 把 Python 文件行首的空格删掉再运行
-            sed -i 's/^[[:space:]]*//' gen_config.py
+            # 2. 写入 Python 脚本 (Base64 方式，彻底解决排版红线)
+            echo "aW1wb3J0IG9zLCBqc29uLCBiYXNlNjQKZnJvbSB1cmxsaWIucGFyc2UgaW1wb3J0IHVybHBhcnNlLCBwYXJzZV9xcywgdW5xdW90ZQpkZWYgZ2V0X2NvbmYoKToKICAgIHVybCA9IG9zLmVudmlyb24uZ2V0KCJQUk9YWV9OT0RFIiwgIiIpLnN0cmlwKCkKICAgIHAgPSB1cmxwYXJzZSh1cmwpCiAgICBzY2hlbWUgPSBwLnNjaGVtZS5sb3dlcigpCiAgICBwYXJhbXMgPSB7azogdlswXSBmb3IgaywgdiBpbiBwYXJzZV9xcyhwLnF1ZXJ5KS5pdGVtcygpfQogICAgYyA9IHsibG9nIjogeyJsZXZlbCI6ICJpbmZvIn0sICJpbmJvdW5kcyI6IFt7InR5cGUiOiAic29ja3MiLCAidGFnIjogInNvY2tzLWluIiwgImxpc3RlbiI6ICIxMjcuMC4wLjEiLCAibGlzdGVuX3BvcnQiOiAxMDgwOH1dLCAib3V0Ym91bmRzIjogW119CiAgICBhdXRoID0gdW5xdW90ZShwLm5ldGxvYy5zcGxpdCgnQCcpWzBdIGlmICdAJyBpbiBwLm5ldGxvYyBlbHNlICIiKQogICAgaG9zdCwgcG9ydCA9IHAuaG9zdG5hbWUsIGludChwLnBvcnQgb3IgNDQzKQogICAgc25pID0gcGFyYW1zLmdldCgic25pIiwgaG9zdCkKICAgIG91dCA9IHsidGFnIjogInByb3h5IiwgInNlcnZlciI6IGhvc3QsICJzZXJ2ZXJfcG9ydCI6IHBvcnR9CiAgICBpZiBzY2hlbWUgPT0gInZsZXNzIjoKICAgICAgICBvdXQudXBkYXRlKHsidHlwZSI6ICJ2bGVzcyIsICJ1dWlkIjogYXV0aCBvciBwLnVzZXJuYW1lLCAicGFja2V0X2VuY29kaW5nIjogInh1ZHAiLCAidGxzIjogeyJlbmFibGVkIjogVHJ1ZSwgInNlcnZlcl9uYW1lIjogc25pLCAiaW5zZWN1cmUiOiBUcnVlfX0pCiAgICAgICAgaWYgcGFyYW1zLmdldCgidHlwZSIpID09ICJ3cyI6CiAgICAgICAgICAgIG91dFsidHJhbnNwb3J0Il0gPSB7InR5cGUiOiAid3MiLCAicGF0aCI6IHVucXVvdGUocGFyYW1zLmdldCgicGF0aCIsICIvIikpLCAiaGVhZGVycyI6IHsiSG9zdCI6IHNuaX19CiAgICAgICAgaWYgcGFyYW1zLmdldCgic2VjdXJpdHkiKSA9PSAicmVhbGl0eSI6CiAgICAgICAgICAgIG91dFsidGxzIl1bInJlYWxpdHkiXSA9IHsiZW5hYmxlZCI6IFRydWUsICJwdWJsaWNfa2V5IjogcGFyYW1zLmdldCgicGJrIiwgIiIpLCAic2hvcnRfaWQiOiBwYXJhbXMuZ2V0KCJzaWQiLCAiIil9CiAgICBlbGlmIHNjaGVtZSA9PSAidHVpYyI6CiAgICAgICAgdSwgcHdkID0gYXV0aC5zcGxpdCgnOicsIDEpIGlmICc6JyBpbiBhdXRoIGVsc2UgKGF1dGgsICIiKQogICAgICAgIG91dC51cGRhdGUoeyJ0eXBlIjogInR1aWMiLCAidXVpZCI6IHUsICJwYXNzd29yZCI6IHB3ZCwgImNvbmdlc3Rpb25fY29udHJvbCI6IHBhcmFtcy5nZXQoImNvbmdlc3Rpb25fY29udHJvbCIsICJjdWJpYyIpLCAidGxzIjogeyJlbmFibGVkIjogVHJ1ZSwgInNlcnZlcl9uYW1lIjogc25pLCAiYWxwniI6IFsiaDMiXSwgImluc2VjdXJlIjogVHJ1ZX19KQogICAgZWxpZiBzY2hlbWUgIGluIFsiaHlzdGVyaWEyIiwgImh5MiJdOgogICAgICAgIG91dC51cGRhdGUoeyJ0eXBlIjogImh5c3RlcmlhMiIsICJwYXNzd29yZCI6IGF1dGgsICJ0bHMiOiB7ImVuYWJsZWQiOiBUcnVlLCAic2VydmVyX25hbWUiOiBzbmlsICJpbnNlY3VyZSI6IFRydWV9fSkKICAgIGVsaWYgc2NoZW1lID09ICJ2bWVzcyI6CiAgICAgICAgdHJ5OgogICAgICAgICAgICByYXcgPSB1cmxbODpdLnNwbGl0KCIjIilbMF0KICAgICAgICAgICAgdiA9IGpzb24ubG9hZHMoYmFzZTY0LmI2NGRlY29kZShyYXcgKyAiPSIqKDQtbGVuKHJhdyklNCkpLmRlY29kZSgpKQogICAgICAgICAgICBvdXQudXBkYXRlKHsidHlwZSI6ICJ2bWVzcyIsICJzZXJ2ZXIiOiB2WydhZGQnXSwgInNlcnZlcl9wb3J0IjogaW50KHZbJ3BvcnQnXSwgInV1aWQiOiB2WydpZCddLCAic2VjdXJpdHkiOiAiYXV0byJ9KQogICAgICAgICAgICBpZiB2LmdldCgndGxzJykgPT0gInRscyI6IG91dFsidGxzIl0gPSB7ImVuYWJsZWQiOiBUcnVlLCAic2VydmVyX25hbWUiOiB2LmdldCgnc25pJywgdlsnYWRkJ10pLCAiaW5zZWN1cmUiOiBUcnVlfQogICAgICAgIGV4Y2VwdDogcGFzcwogICAgY1sib3V0Ym91bmRzIl0uappendbmQoYnV0KQogICAgY1sib3V0Ym91bmRzIl0uappendbmQoeyJ0eXBlIjogImRpcmVjdCIsICJ0YWciOiAiZGlyZWN0In0pCiAgICByZXR1cm4gYwp3aXRoIG9wZW4oImNvbmZpZy5qc29uIiwgInciKSBhcyBmOgogICAganNvbi5kdW1wKGdldF9jb25mKCksIGYsIGluZGVudD0yKQo=" | base64 -d > gen_config.py
             python3 gen_config.py
             
             # 3. 运行
@@ -96,5 +57,12 @@ jobs:
           PASSWORD: ${{ secrets.PASSWORD }}
           PTERODACTYL_SESSION: ${{ secrets.PTERODACTYL_SESSION }}
         run: |
-          pip install -r requirements.txt || true
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           python auto_renew.py
+
+      - name: Commit and push if changed
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add last_renew_data.txt || true
+          git diff --cached --quiet || (git commit -m "Auto Update" && git push origin main)

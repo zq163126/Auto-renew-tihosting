@@ -1,8 +1,8 @@
 name: Auto Renew Tickhosting
 
 on:
-  schedule:
-    - cron: '0 0 */4 * *'
+ # schedule:
+#    - cron: '0 0 */4 * *'
   workflow_dispatch: 
 
 permissions:

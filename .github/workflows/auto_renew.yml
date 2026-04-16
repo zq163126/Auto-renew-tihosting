@@ -41,24 +41,24 @@ jobs:
       env:
           PROXY_NODE: ${{ secrets.PROXY_NODE }}
       run: |
-        if [ -z "$PROXY_NODE" ]; then
+          if [ -z "$PROXY_NODE" ]; then
             echo "[INFO] 未配置代理，尝试直连模式..."
             exit 0
-        fi
+          fi
           
           # 1. 下载并安装最新的 Sing-box 核心
-        TAG=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-        VERSION=${TAG#v}
-        wget -q "https://github.com/SagerNet/sing-box/releases/download/${TAG}/sing-box-${VERSION}-linux-amd64.tar.gz"
-        tar -xzf "sing-box-${VERSION}-linux-amd64.tar.gz"
-        mv "sing-box-${VERSION}-linux-amd64/sing-box" . && chmod +x sing-box
+          TAG=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+          VERSION=${TAG#v}
+          wget -q "https://github.com/SagerNet/sing-box/releases/download/${TAG}/sing-box-${VERSION}-linux-amd64.tar.gz"
+          tar -xzf "sing-box-${VERSION}-linux-amd64.tar.gz"
+          mv "sing-box-${VERSION}-linux-amd64/sing-box" . && chmod +x sing-box
           
           # 2. 自动化协议解析脚本 (核心逻辑)
-        python3 << 'PYEOF'
-        import os, json, base64
-        from urllib.parse import urlparse, parse_qs, unquote
+          python3 << 'PYEOF'
+          import os, json, base64
+          from urllib.parse import urlparse, parse_qs, unquote
 
-        def generate_singbox_config():
+          def generate_singbox_config():
               url = os.environ.get("PROXY_NODE", "").strip()
               p = urlparse(url)
               scheme = p.scheme.lower()
